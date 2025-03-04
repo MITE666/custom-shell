@@ -20,7 +20,7 @@ void init() {
 
 void help() {
     printf("\n");
-    printf("    help    Show all commands\n");
+    printf("    help    Shows all commands\n");
     printf("    exit    Closes the shell\n");
     printf("    You can run basic terminal commands in here as well\n");
     printf("\n");
