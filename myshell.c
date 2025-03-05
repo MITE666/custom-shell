@@ -28,7 +28,7 @@ void help() {
 }
 
 void handle_sigint() {
-    printf("mysh>");
+    printf("\nmysh>");
     fflush(stdout);
 }
 
@@ -59,12 +59,29 @@ void process_command(char *buff) {
         return;
     }
 
+    char *equal_sign = strchr(buff, '=');
+    if (equal_sign) {
+        *equal_sign = '\0';
+        setenv(buff, equal_sign + 1, 1);
+        return;
+    }
+
+    if (!strncmp(buff, "unset", 5)) {
+        unsetenv(buff + 6);
+        return;
+    }
+
     char *args[MAX_ARGS];
 
     char *token = strtok(buff, " ");
     int i = 0;
     while (token) {
-        args[i++] = token;
+        if (token[0] == '$') {
+            char *env_var = getenv(token + 1);
+            args[i++] = env_var ? env_var : "";
+        } else {
+            args[i++] = token;
+        }
         token = strtok(NULL, " ");
     }
     args[i] = NULL;
