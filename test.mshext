@@ -1,0 +1,4 @@
+pwd
+string=HELLO
+echo $string
+$1 $2

@@ -91,6 +91,49 @@ void process_command(char *buff) {
     }
 }
 
+void execute_script(char *buff) {
+    FILE *fptr;
+
+    char *token = strtok(buff, " \n");
+    fptr = fopen(token, "r");
+
+    if (!fptr) {
+        printf("Error at opening file!\n");
+        return;
+    }
+
+    char *args[MAX_ARGS];
+    int i = 0;
+    while (token) { 
+        char number[MAX_CMD];
+        int err = sprintf(number, "%d", i++);
+        if (err < 0) {
+            perror("Failed to convert number to string!");
+            return;
+        }
+
+        setenv(number, token, 1);
+
+        token = strtok(NULL, " \n");
+    }
+
+    char line[MAX_CMD];
+    while (fgets(line, MAX_CMD, fptr)) {
+        process_command(line);
+    }
+
+    while (i) {
+        char number[MAX_CMD];
+        int err = sprintf(number, "%d", --i);
+        if (err < 0) {
+            perror("Failed to convert number to string!");
+            return;
+        }
+
+        unsetenv(number);
+    }
+}
+
 int main(int argc, char *argv[]) {
 
     signal(SIGINT, handle_sigint);
@@ -108,7 +151,11 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
 
-        process_command(buff);
+        if (!strncmp(buff, "./", 2) && strstr(buff, ".mshext")) {
+            execute_script(buff + 2);
+        } else {
+            process_command(buff);
+        }
     }
 
     return 0;
