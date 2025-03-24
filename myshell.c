@@ -16,6 +16,10 @@ size_t total_len;
 int quote_count;
 
 
+void execute_script(char *args[], int count);
+void process_command(char *args[], int count);
+
+
 void init() {
     printf("************************************************\n");
     printf("*                                              *\n");
@@ -64,7 +68,7 @@ void tokenize(char *input, char *tokens[], int *count) {
     int quotes_begin_inside = 0;
     int quotes_end_inside = 0;
     
-    while (*ptr) {
+    while (*ptr && *count < ARG_MAX - 1) {
         int increase = 0;
         while (*ptr == ' ') {
             ptr++;
@@ -120,88 +124,101 @@ void tokenize(char *input, char *tokens[], int *count) {
     } else {
         char *token = tokens[*count - 1];
         int len = strlen(token);
-        strcpy(token + len - 1, token + len);
+        if (token[len - 1] == '\n') {
+            strcpy(token + len - 1, token + len);
+        }
         tokens[*count] = NULL;
     }
 }
 
-void expand_var(char *loc, char **var, int *go_back) {
-    char *expanded_var = getenv(*var);
-    expanded_var = expanded_var ? expanded_var : "";
-    int untouched_chars = loc - full_input;
+void expand_var(char **buff, char *loc, char *exp_var, int size_dif) {
+    int untouched_chars = loc - *buff;
 
-    if (strlen(*var) + 1 < strlen(expanded_var)) {
-        int size_dif = strlen(expanded_var) - strlen(*var) - 1;
-        full_input = realloc(full_input, total_len + size_dif + 1);
-        if (!full_input) {
-            free(*var);
+    if (size_dif > 0) {
+        *buff = realloc(*buff, strlen(*buff) + size_dif + 1);
+        if (!(*buff)) {
+            perror("realloc");
+            exit(EXIT_FAILURE);
+        }
+        memmove(loc + size_dif, loc, strlen(*buff) - untouched_chars + 1);
+    } else if (size_dif < 0) {
+        memmove(loc, loc - size_dif, strlen(*buff) - untouched_chars + size_dif + 1);
+        *buff = realloc(*buff, strlen(*buff) + size_dif + 1);
+        if (!(*buff)) {
             free(input);
             perror("realloc");
             exit(EXIT_FAILURE);
         }
-        memmove(loc + size_dif, loc, total_len - untouched_chars + 1);
-        total_len += size_dif;
-        *go_back = size_dif;
-    } else if (strlen(*var) + 1 > strlen(expanded_var)) {
-        int size_dif = strlen(*var) + 1 - strlen(expanded_var);
-        memmove(loc, loc + size_dif, total_len - untouched_chars - size_dif + 1);
-        full_input = realloc(full_input, total_len - size_dif + 1);
-        if (!full_input) {
-            free(*var);
-            free(input);
-            perror("realloc");
-            exit(EXIT_FAILURE);
-        }
-        total_len -= size_dif;
-        *go_back = -size_dif;
     }
-    memcpy(loc, expanded_var, strlen(expanded_var));
+    memcpy(loc, exp_var, strlen(exp_var));
 }
 
-void expand_tokens(char *tokens[], int *count) {
-    for (int i = 0; i < *count; ++i) {
-        char *ptr = tokens[i];
-        while (ptr && *ptr != '\0') {
-            if (*ptr == '$' && *(ptr + 1) == '\0') {
-                ptr++;
-            }
-            if (*ptr == '$') {
-                char *begin = ptr;
-                ptr++;
-                int var_size = 0;
-                while (ptr && *ptr != '\0' && *ptr != '$') {
-                    var_size++;
-                    ptr++;
-                }
-                char *var = malloc(var_size + 1);
-                if (!var) {
-                    free(input);
-                    free(full_input);
-                    perror("allocating memory");
-                    exit(EXIT_FAILURE);
-                }
-                strncpy(var, begin + 1, var_size);
-                var[var_size] = '\0';
-                int go_back;
-                expand_var(begin, &var, &go_back);
-                ptr += go_back;
-                free(var);
-            } else {
-                ptr++;
-            }
+void expand_tokens(char **input) {
+    char *ptr = *input;
+    while (*ptr != '\0') {
+        if (*ptr == '$' && *(ptr + 1) == '\0') {
+            ptr++;
         }
-    }
-
-    for (int i = 0; i < *count; ++i) {
-        if (!strcmp(tokens[i], "")) {
-            for (int j = i + 1; j <= *count; ++j) {
-                tokens[j - 1] = tokens[j];
+        if (*ptr == '$') {
+            char *begin = ptr;
+            ptr++;
+            int var_size = 0;
+            while (!isspace((unsigned char)*ptr) && *ptr != '$' && *ptr != '\0') {
+                var_size++;
+                ptr++;
             }
-            (*count)--;
+            char *var = malloc(var_size + 1);
+            if (!var) {
+                perror("allocating memory");
+                exit(EXIT_FAILURE);
+            }
+            strncpy(var, begin + 1, var_size);
+            var[var_size] = '\0';
+            char *expanded_var = getenv(var);
+            expanded_var = expanded_var ? expanded_var : "";
+            int size_dif = strlen(expanded_var) - var_size - 1;
+
+            expand_var(input, begin, expanded_var, size_dif);
+            ptr += size_dif + 1;
+            free(var);
+        } else {
+            ptr++;
         }
     }
 }
 
+
+void expand_file_args(char **buff, char *args[], int args_count) {
+    char *ptr = *buff;
+    while (*ptr != '\0') {
+        if (*ptr == '$' && isdigit(*(ptr + 1))) {
+            char *begin = ptr;
+            ptr++;
+            int num_size = 0;
+            while (isdigit(*ptr)) {
+                ptr++;
+                num_size++;
+            }
+            if (num_size > 3) continue;
+            if (!isspace((unsigned char)*ptr) && *ptr != '\0') continue;
+            char num_str[4];
+            strncpy(num_str, begin + 1, num_size);
+            num_str[num_size] = '\0';
+            char *endptr;
+            long num = strtol(num_str, &endptr, 10);
+
+            if (*endptr != '\0') continue;
+            
+            char *arg = (num >= args_count - 1) ? "" : args[num + 1];
+            int size_dif = strlen(arg) - num_size - 1;
+
+            expand_var(buff, begin, arg, size_dif);
+            ptr += size_dif;
+        } else {
+            ptr++;
+        }
+    }
+}
 
 void execute_command(char *cmd, char *args[]) {
     pid_t pid = fork();
@@ -216,20 +233,78 @@ void execute_command(char *cmd, char *args[]) {
     }
 }
 
-void process_command(char *args[], int *count) {
-    if (*count == 1 && !strcmp(args[0], "exit")) {
+void execute_script(char *args[], int count) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        FILE *fptr;
+
+        fptr = fopen(args[0], "r");
+    
+        if (!fptr) {
+            perror(args[0]);
+            return;
+        }
+    
+        char *line_input = NULL;
+        size_t line_size = 0;
+        size_t total_line_size = 0;
+        ssize_t read;
+    
+        char *tokens[ARG_MAX];
+        int tokens_count;
+    
+        while ((read = getline(&line_input, &line_size, fptr)) != -1) {
+            total_line_size = read;
+    
+            expand_file_args(&line_input, args, count);
+    
+            expand_tokens(&line_input);
+    
+            tokenize(line_input, tokens, &tokens_count);
+    
+            process_command(tokens, tokens_count);
+    
+            line_size = 0;
+    
+            free(line_input);
+        }
+    
+        if (ferror(fptr)) {
+            perror("reading file line");
+            free(line_input);
+            free(input);
+            free(full_input);
+            exit(EXIT_FAILURE);
+        }
+    
+        fclose(fptr);
+    } else if (pid > 0) {
+        wait(NULL);
+    } else {
+        perror("Forking error");
+    }
+}
+
+void process_command(char *args[], int count) {
+    if (count == 1 && !strcmp(args[0], "exit")) {
         exit(EXIT_SUCCESS);
     }
 
-    if (*count == 1 && !strcmp(args[0], "help")) {
+    if (count == 1 && !strcmp(args[0], "help")) {
         help();
         return;
     }
 
     char *equal_sign;
-    if (*count == 1 && (equal_sign = strchr(args[0], '='))) {
+    if (count == 1 && (equal_sign = strchr(args[0], '='))) {
         *equal_sign = '\0';
         char *left = args[0];
+
+        if (isdigit(*left)) {
+            printf("Variable cannot start with a digit.\n");
+            return;
+        }
+
         char *right = equal_sign + 1;
         while (right && *right != '\0') {
             if (*right == '\n' || *right == ' ') {
@@ -256,94 +331,18 @@ void process_command(char *args[], int *count) {
         return;
     }
 
-    if (*count == 2 && !strcmp(args[0], "unset")) {
+    if (count == 2 && !strcmp(args[0], "unset")) {
         unsetenv(args[1]);
+        return;
+    }
+
+    if (!strncmp(args[0], "./", 2) && !strcmp(args[0] + strlen(args[0]) - strlen(".mshext"), ".mshext")) {
+        execute_script(args, count);
         return;
     }
 
     execute_command(args[0], args);
 }
-
-// void process_command(char **args, int length) {
-//     
-
-    // if ()
-
-    // char *equal_sign = strchr(buff, '=');
-    // if (equal_sign) {
-    //     *equal_sign = '\0';
-    //     setenv(buff, equal_sign + 1, 1);
-    //     return;
-    // }
-
-    // if (!strncmp(buff, "unset", 5)) {
-    //     unsetenv(buff + 6);
-    //     return;
-    // }
-
-    // char *args[MAX_ARGS];
-
-    // char *token = strtok(buff, " ");
-    // int i = 0;
-    // while (token) {
-    //     if (token[0] == '$') {
-    //         char *env_var = getenv(token + 1);
-    //         args[i++] = env_var ? env_var : "";
-    //     } else {
-    //         args[i++] = token;
-    //     }
-    //     token = strtok(NULL, " ");
-    // }
-    // args[i] = NULL;
-
-    // if (i > 0) {
-    //     execute_command(args[0], args);
-    // }
-//}
-
-// void execute_script(char *buff) {
-//     FILE *fptr;
-
-//     char *token = strtok(buff, " \n");
-//     fptr = fopen(token, "r");
-
-//     if (!fptr) {
-//         perror(token);
-//         return;
-//     }
-
-//     char *args[MAX_ARGS];
-//     int i = 0;
-//     while (token) { 
-//         char number[MAX_CMD];
-//         int err = sprintf(number, "%d", i++);
-//         if (err < 0) {
-//             perror("Failed to convert number to string!");
-//             fclose(fptr);
-//             return;
-//         }
-
-//         setenv(number, token, 1);
-
-//         token = strtok(NULL, " \n");
-//     }
-
-//     char line[MAX_CMD];
-//     while (fgets(line, MAX_CMD, fptr)) {
-//         process_command(line);
-//     }
-
-//     while (i) {
-//         char number[MAX_CMD];
-//         int err = sprintf(number, "%d", --i);
-//         if (err < 0) {
-//             perror("Failed to convert number to string!");
-//             return;
-//         }
-
-//         unsetenv(number);
-//     }
-// }
 
 
 int main(int argc, char *argv[]) {
@@ -397,53 +396,20 @@ int main(int argc, char *argv[]) {
         char *tokens[ARG_MAX];
         int count;
 
-        tokenize(full_input, tokens, &count);
 
         if (count == 1 && strchr(full_input, '=') && strstr(full_input, "$$")) {
             printf("You cannot use $$\n");
         } else {
-            expand_tokens(tokens, &count);
+            expand_tokens(&full_input);
 
-            process_command(tokens, &count);
+            tokenize(full_input, tokens, &count);
+
+            process_command(tokens, count);
         }
 
         free(input);
         free(full_input);
-
-        
-        // char *args[MAX_ARGS];
-        // char *token = strtok(buff, " \n");
-        // int i = 0;
-
-        // while (token && i < MAX_ARGS - 1) {
-        //     args[i++] = token;
-
-        //     token = strtok(NULL, " \n");
-        // }
-
-        // args[i] = NULL;
-
-        //process_command(args, i);
-
-        // if (!strncmp(buff, "./", 2) && strstr(buff, ".mshext")) {
-        //     execute_script(buff + 2);
-        // } else {
-        //     process_command(buff);
-        // }
     }
 
     return 0;
 }
-
-
-//  TODO:
-//  $0 (trebuie sa inceapa nu cu cifra)
-//  de implementat recursiv
-//  .mshext poate fi gasit in interior
-//  expandarea in argumentele scriptului (script $abc)
-//  la recursive environment conflict
-
-//  metode:
-//  parsam toate tokenurile, dupa care pasez acest array ca argument pentru process command (tot aici fac trimming and shit)
-//  expandez variabilele locale
-//  pentru recursie - crearea unui array de environments

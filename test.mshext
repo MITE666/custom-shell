@@ -1,5 +1,4 @@
 pwd
 string=HELLO
 echo $string
-echo $1 $2
-./test.mshext 
+$0 $1
