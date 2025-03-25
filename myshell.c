@@ -167,11 +167,7 @@ void expand_tokens(char **input) {
                 var_size++;
                 ptr++;
             }
-            char *var = malloc(var_size + 1);
-            if (!var) {
-                perror("allocating memory");
-                exit(EXIT_FAILURE);
-            }
+            char var[var_size + 1];
             strncpy(var, begin + 1, var_size);
             var[var_size] = '\0';
             char *expanded_var = getenv(var);
@@ -180,7 +176,6 @@ void expand_tokens(char **input) {
 
             expand_var(input, begin, expanded_var, size_dif);
             ptr += size_dif + 1;
-            free(var);
         } else {
             ptr++;
         }
