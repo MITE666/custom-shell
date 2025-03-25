@@ -156,7 +156,7 @@ void expand_var(char **buff, char *loc, char *exp_var, int size_dif) {
 void expand_tokens(char **input) {
     char *ptr = *input;
     while (*ptr != '\0') {
-        if (*ptr == '$' && *(ptr + 1) == '\0') {
+        if (*ptr == '$' && (*(ptr + 1) == '\0' || *(ptr + 1) == '\n')) {
             ptr++;
         }
         if (*ptr == '$') {
@@ -175,7 +175,7 @@ void expand_tokens(char **input) {
             int size_dif = strlen(expanded_var) - var_size - 1;
 
             expand_var(input, begin, expanded_var, size_dif);
-            ptr += size_dif + 1;
+            ptr += size_dif;
         } else {
             ptr++;
         }
